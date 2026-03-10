@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SciData Pro: Physics Edition</title>
+
+    
+
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    <script src="https://unpkg.com/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js"></script>
+
+
+
+    <style>
+
+        :root { --bg: #ffffff; --sidebar: #f8fafc; --text: #0f172a; --border: #cbd5e1; --accent: #2563eb; --hot-bg: #ffffff; }
+
+        [data-theme="dark"] { --bg: #111111; --sidebar: #1a1a1a; --text: #e5e7eb; --border: #333333; --accent: #3b82f6; --hot-bg: #1a1a1a; }
+
+        
+
+        body { font-family: 'Inter', sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); overflow: hidden; }
+
+        #sidebar { width: 400px; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--sidebar); padding: 20px; box-sizing: border-box; }
+
+        #main { flex-grow: 1; padding: 20px; display: flex; flex-direction: column; background: var(--bg); position: relative; overflow: hidden; }
+
+        
+
+        #hot-container { width: 100%; height: 280px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+
+        .stats-box { background: rgba(128,128,128,0.1); padding: 12px; border-radius: 8px; border-left: 4px solid var(--accent); font-family: monospace; margin-bottom: 15px; font-size: 0.8rem; }
+
+        
+
+        .btn-main { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+
+        #plot { flex-grow: 1; border-radius: 8px; border: 1px solid var(--border); }
+
+
+
+        /* Floating Regression Window - Hover Zone Logic */
+
+        #reg-hover-zone { position: absolute; right: 0; top: 0; bottom: 0; width: 30px; z-index: 1001; }
+
+        #reg-manager { 
+
+            position: absolute; right: -280px; top: 20px; bottom: 20px; width: 250px; 
+
+            background: var(--sidebar); border: 1px solid var(--border); border-radius: 12px 0 0 12px;
+
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 1002; padding: 15px; 
+
+            box-shadow: -10px 0 20px rgba(0,0,0,0.15); pointer-events: auto;
+
+        }
+
+        #reg-hover-zone:hover + #reg-manager, #reg-manager:hover { transform: translateX(-280px); }
+
+        
+
+        .reg-item { font-size: 0.75rem; padding: 10px; border-bottom: 1px solid var(--border); }
+
+        .delete-btn { color: #ef4444; cursor: pointer; float: right; font-weight: bold; }
+
+
+
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--sidebar); padding: 25px; border: 2px solid var(--accent); border-radius: 12px; z-index: 3000; width: 320px; color: var(--text); }
+
+        .handsontable td { background: var(--hot-bg) !important; color: var(--text) !important; border-color: var(--border) !important; }
+
+        .handsontable th { background: var(--sidebar) !important; color: var(--text) !important; border-color: var(--border) !important; }
+
+    </style>
+
+</head>
+
+<body data-theme="light">
+
+
+
+<div id="sidebar">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+
+        <h2 style="margin:0; font-size:1.2rem; color:var(--accent);">🔬 SciData Pro</h2>
+
+        <div style="cursor:pointer" onclick="toggleTheme()">🌓</div>
+
+    </div>
+
+    <div id="hot-container"></div>
+
+    <button class="btn-main" onclick="addColumn()">➕ Add Column</button>
+
+    <div class="stats-box" id="stats-output">Drag X-slice. Hover right for Fits.</div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+
+        <button class="btn-main" style="background:#4b5563" onclick="runRegression('linear')">Linear Fit</button>
+
+        <button class="btn-main" style="background:#4b5563" onclick="runRegression('quadratic')">Quadratic Fit</button>
+
+    </div>
+
+</div>
+
+
+
+<div id="main">
+
+    <div id="plot"></div>
+
+    <div id="reg-hover-zone"></div>
+
+    <div id="reg-manager">
+
+        <h4 style="margin:0 0 12px 0; border-bottom: 2px solid var(--accent)">Saved Regressions</h4>
+
+        <div id="reg-list" style="overflow-y: auto; max-height: 85%;"></div>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+let hot, currentXCol = 0, currentYCol = 1, lastSelectedPoints = null;
+
+let regressions = [];
+
+const regColors = ['#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+let currentHeaders = [
+
+    ['Col A', 'Col B', 'Col C', 'Col D'],
+
+    ['Time ($t$)', 'Position ($x$)', 'Quantity C', 'Quantity D'],
+
+    ['s', 'm', '-', '-']
+
+];
+
+
+
+function initTable() {
+
+    hot = new Handsontable(document.getElementById('hot-container'), {
+
+        data: [['0','0'],['1','4.9'],['2','19.6'],['3','44.1'],['4','78.4']],
+
+        rowHeaders: true, nestedHeaders: currentHeaders, stretchH: 'all', licenseKey: 'non-commercial-and-evaluation'
+
+    });
+
+}
+
+
+
+// CORRECTED QUADRATIC REGRESSION (Ordinary Least Squares)
+
+function solveQuadratic(x, y) {
+
+    let n = x.length;
+
+    let sumX = 0, sumX2 = 0, sumX3 = 0, sumX4 = 0, sumY = 0, sumXY = 0, sumX2Y = 0;
+
+    
+
+    for (let i = 0; i < n; i++) {
+
+        let xi = x[i], yi = y[i], xi2 = xi * xi;
+
+        sumX += xi; sumX2 += xi2; sumX3 += xi2 * xi; sumX4 += xi2 * xi2;
+
+        sumY += yi; sumXY += xi * yi; sumX2Y += xi2 * yi;
+
+    }
+
+
+
+    // Matrix to solve: A * [a, b, c]^T = B
+
+    let A = [
+
+        [sumX4, sumX3, sumX2],
+
+        [sumX3, sumX2, sumX],
+
+        [sumX2, sumX, n]
+
+    ];
+
+    let B = [sumX2Y, sumXY, sumY];
+
+
+
+    // Gaussian Elimination
+
+    for (let i = 0; i < 3; i++) {
+
+        let pivot = A[i][i];
+
+        for (let j = i; j < 3; j++) A[i][j] /= pivot;
+
+        B[i] /= pivot;
+
+        for (let k = 0; k < 3; k++) {
+
+            if (k !== i) {
+
+                let factor = A[k][i];
+
+                for (let j = i; j < 3; j++) A[k][j] -= factor * A[i][j];
+
+                B[k] -= factor * B[i];
+
+            }
+
+        }
+
+    }
+
+    return B; // Returns [a, b, c] for ax^2 + bx + c
+
+}
+
+
+
+function runRegression(type) {
+
+    if(!lastSelectedPoints || lastSelectedPoints.length < 3) return alert("Select at least 3 points for a proper fit!");
+
+    const x = lastSelectedPoints.map(p => p.x);
+
+    const y = lastSelectedPoints.map(p => p.y);
+
+    let fitX = [], fitY = [], equation = "", label = "";
+
+
+
+    const xMin = Math.min(...x), xMax = Math.max(...x);
+
+    for (let i = xMin; i <= xMax; i += (xMax-xMin)/50) fitX.push(i);
+
+
+
+    if (type === 'linear') {
+
+        const l = ss.linearRegression(x.map((xv, i) => [xv, y[i]]));
+
+        const f = ss.linearRegressionLine(l);
+
+        fitY = fitX.map(xv => f(xv));
+
+        equation = `y = ${l.m.toFixed(3)}x + ${l.b.toFixed(3)}`;
+
+        label = "Linear";
+
+    } else {
+
+        const [a, b, c] = solveQuadratic(x, y);
+
+        fitY = fitX.map(xv => a*xv*xv + b*xv + c);
+
+        equation = `y = ${a.toFixed(3)}x² + ${b.toFixed(3)}x + ${c.toFixed(3)}`;
+
+        label = "Quadratic";
+
+    }
+
+
+
+    regressions.push({
+
+        id: Date.now(), label: `${label} (${regressions.length+1})`, 
+
+        equation, fitX, fitY, visible: true, 
+
+        color: regColors[regressions.length % regColors.length]
+
+    });
+
+
+
+    updateRegList();
+
+    syncAndGraph();
+
+}
+
+
+
+function updateRegList() {
+
+    const list = document.getElementById('reg-list');
+
+    list.innerHTML = regressions.map(reg => `
+
+        <div class="reg-item" style="border-left: 4px solid ${reg.color}">
+
+            <span class="delete-btn" onclick="deleteReg(${reg.id})">✕</span>
+
+            <div style="font-weight:bold; margin-bottom:2px">${reg.label}</div>
+
+            <div style="font-size:0.7rem; color:var(--accent)">${reg.equation}</div>
+
+            <label style="font-size:0.7rem"><input type="checkbox" ${reg.visible?'checked':''} onchange="toggleReg(${reg.id})"> Show</label>
+
+        </div>
+
+    `).join('');
+
+}
+
+
+
+function syncAndGraph() {
+
+    const raw = hot.getData();
+
+    const xData = raw.map(r => parseFloat(r[currentXCol])).filter(v => !isNaN(v));
+
+    const yData = raw.map(r => parseFloat(r[currentYCol])).filter(v => !isNaN(v));
+
+    const isDark = document.body.getAttribute('data-theme') === 'dark';
+
+
+
+    const traces = [{
+
+        x: xData, y: yData, name: 'Data', mode: 'markers+lines', 
+
+        marker: { size: 8, color: '#3b82f6' }, line: { width: 1 }
+
+    }];
+
+
+
+    regressions.filter(r => r.visible).forEach(reg => {
+
+        traces.push({
+
+            x: reg.fitX, y: reg.fitY, name: reg.label, mode: 'lines',
+
+            line: { color: reg.color, width: 2, dash: 'dash' }
+
+        });
+
+    });
+
+
+
+    const layout = {
+
+        xaxis: { title: `${currentHeaders[1][currentXCol].replace(/\$/g,'')} (${currentHeaders[2][currentXCol]})`, gridcolor: isDark?'#333':'#eee' },
+
+        yaxis: { title: `${currentHeaders[1][currentYCol].replace(/\$/g,'')} (${currentHeaders[2][currentYCol]})`, gridcolor: isDark?'#333':'#eee' },
+
+        dragmode: 'select', selectdirection: 'h', template: isDark ? 'plotly_dark' : 'plotly_white',
+
+        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', showlegend: false
+
+    };
+
+
+
+    Plotly.newPlot('plot', traces, layout, {displayModeBar: false});
+
+
+
+    document.getElementById('plot').on('plotly_selected', (ed) => {
+
+        if(!ed) return;
+
+        const xRange = ed.range.x;
+
+        const fullData = hot.getData().map(r => ({x: parseFloat(r[currentXCol]), y: parseFloat(r[currentYCol])}))
+
+                                     .filter(p => !isNaN(p.x) && !isNaN(p.y));
+
+        lastSelectedPoints = fullData.filter(p => p.x >= xRange[0] && p.x <= xRange[1]).sort((a,b) => a.x - b.x);
+
+        document.getElementById('stats-output').innerHTML = `Range: ${xRange[0].toFixed(1)} - ${xRange[1].toFixed(1)}`;
+
+    });
+
+}
+
+
+
+function deleteReg(id) { regressions = regressions.filter(r => r.id !== id); updateRegList(); syncAndGraph(); }
+
+function toggleReg(id) { let r = regressions.find(r=>r.id===id); if(r) r.visible = !r.visible; syncAndGraph(); }
+
+function toggleTheme() { document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); syncAndGraph(); }
+
+
+
+initTable(); syncAndGraph();
+
+</script>
+
+</body>
+
+</html>
