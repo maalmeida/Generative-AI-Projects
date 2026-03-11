@@ -1,0 +1,290 @@
+<!--This allows renaming of column headings and updates the graph -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SciData Pro: Physics Edition</title>
+    
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://unpkg.com/simple-statistics@7.8.3/dist/simple-statistics.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js"></script>
+
+    <style>
+        :root { --bg: #ffffff; --sidebar: #f1f5f9; --text: #0f172a; --border: #cbd5e1; --accent: #2563eb; --modal-bg: #ffffff; }
+        [data-theme="dark"] { --bg: #0f172a; --sidebar: #1e293b; --text: #f8fafc; --border: #334155; --accent: #60a5fa; --modal-bg: #1e293b; }
+        
+        body { font-family: 'Inter', sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); transition: all 0.2s ease; }
+        #sidebar { width: 440px; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--sidebar); padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        #main { flex-grow: 1; padding: 20px; display: flex; flex-direction: column; background: var(--bg); }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        h2 { margin: 0; font-size: 1.4rem; color: var(--accent); }
+        .theme-toggle { cursor: pointer; font-size: 1.4rem; filter: grayscale(1); transition: 0.2s; }
+        .theme-toggle:hover { filter: grayscale(0); transform: scale(1.1); }
+        
+        .hint { font-size: 0.75rem; opacity: 0.8; margin-bottom: 15px; line-height: 1.4; color: var(--text); }
+        #hot-container { width: 100%; height: 320px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: white; }
+        
+        .stats-box { background: rgba(128,128,128,0.15); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); font-family: 'JetBrains Mono', monospace; margin-bottom: 15px; font-size: 0.85rem; color: var(--text); }
+        
+        .btn-main { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-bottom: 8px; transition: opacity 0.2s; }
+        .btn-main:hover { opacity: 0.9; }
+        
+        #plot { flex-grow: 1; border-radius: 8px; border: 1px solid var(--border); }
+
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--modal-bg); padding: 25px; border: 2px solid var(--accent); border-radius: 12px; z-index: 1000; width: 380px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); color: var(--text); }
+        .modal input, .modal textarea { width: 100%; padding: 10px; margin: 8px 0 15px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); box-sizing: border-box; font-size: 1rem; }
+        
+        /* High Contrast for Spreadsheet in Dark Mode */
+        [data-theme="dark"] .handsontable td { background: #1e293b; color: #f8fafc; border-color: #334155; }
+        [data-theme="dark"] .handsontable th { background: #334155; color: #f8fafc; border-color: #475569; }
+    </style>
+</head>
+<body data-theme="light">
+
+<div id="sidebar">
+    <div class="header-row">
+        <h2>🔬 SciData Pro</h2>
+        <div class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">🌓</div>
+    </div>
+    <div class="hint">Double-click headers to rename. Right-click <b>Quantity</b> row for Notes.</div>
+    
+    <div id="hot-container"></div>
+
+    <button class="btn-main" onclick="addColumn()">➕ Add New Blank Column</button>
+    <button class="btn-main" style="background: #10b981;" onclick="syncAndGraph()">Sync & Refresh Graph</button>
+
+    <div class="stats-box">
+        <strong>Selection Analysis</strong>
+        <div id="stats-output">Select a range to calculate ∫ or click for 3-point slope.</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <button class="btn-main" style="background:#64748b" onclick="runRegression('linear')">Linear Fit</button>
+        <button class="btn-main" style="background:#64748b" onclick="runRegression('quadratic')">Quadratic Fit</button>
+    </div>
+</div>
+
+<div id="main">
+    <div id="plot"></div>
+</div>
+
+<div id="rename-modal" class="modal">
+    <h3 style="margin-top:0">Edit Column <span id="col-letter"></span></h3>
+    <label>Quantity Name (Text or $LaTeX$):</label>
+    <input type="text" id="input-qty" autocomplete="off">
+    <label>Units:</label>
+    <input type="text" id="input-unit" autocomplete="off">
+    <div style="display:flex; gap:10px;">
+        <button class="btn-main" onclick="applyRename()">Save</button>
+        <button class="btn-main" style="background:#ef4444" onclick="closeModal()">Cancel</button>
+    </div>
+</div>
+
+<div id="notes-modal" class="modal">
+    <h3 style="margin-top:0">Notes: Column <span id="notes-col-letter"></span></h3>
+    <textarea id="input-notes" rows="4" placeholder="Enter methodology notes..."></textarea>
+    <div style="display:flex; gap:10px;">
+        <button class="btn-main" onclick="applyNotes()">Save</button>
+        <button class="btn-main" style="background:#ef4444" onclick="closeModal()">Cancel</button>
+    </div>
+</div>
+
+<script>
+let hot;
+let isSampleData = true;
+let currentTargetCol = 0;
+let lastSelectedPoints = null;
+let lastClickTime = 0;
+let columnNotes = ["", "", "", "", "", ""];
+
+let currentHeaders = [
+    ['Col A', 'Col B', 'Col C', 'Col D'],
+    ['Time ($t$)', 'Position ($x$)', 'Quantity C', 'Quantity D'],
+    ['s', 'm', '-', '-']
+];
+
+function initTable() {
+    hot = new Handsontable(document.getElementById('hot-container'), {
+        data: [['0','0'],['1','4.9'],['2','19.6'],['3','44.1'],['4','78.4']],
+        rowHeaders: true,
+        nestedHeaders: currentHeaders,
+        stretchH: 'all',
+        licenseKey: 'non-commercial-and-evaluation',
+        contextMenu: {
+            items: {
+                "rename_col": {
+                    name: "🏷️ Rename Quantity & Units",
+                    callback: (key, selection) => triggerRenameModal(selection[0].start.col)
+                },
+                "add_note": {
+                    name: "📝 Add/Edit Quantity Notes",
+                    callback: (key, selection) => openNotesModal(selection[0].start.col)
+                },
+                "sep1": "---------",
+                "col_right": { name: "Add Column Right" },
+                "remove_col": { name: "Remove Column" }
+            }
+        },
+        afterOnHeaderMouseDown: (e, coords) => {
+            if (coords.row >= 1) { // Rows 2 or 3
+                const now = Date.now();
+                if (now - lastClickTime < 300) triggerRenameModal(coords.col);
+                lastClickTime = now;
+            }
+        },
+        afterGetColHeader: (col, TH) => {
+            if (TH.innerText.includes('$')) {
+                const regex = /\$([^$]+)\$/g;
+                TH.innerHTML = TH.innerText.replace(regex, (match) => `<span class="tex">${match}</span>`);
+                TH.querySelectorAll('.tex').forEach(el => {
+                    try { katex.render(el.innerText.replace(/\$/g,''), el); } catch(e) {}
+                });
+            }
+        }
+    });
+}
+
+function addColumn() {
+    hot.alter('insert_col');
+    const newIdx = currentHeaders[0].length;
+    currentHeaders[0].push(`Col ${String.fromCharCode(65 + newIdx)}`);
+    currentHeaders[1].push(`Quantity ${String.fromCharCode(65 + newIdx)}`);
+    currentHeaders[2].push('-');
+    columnNotes.push("");
+    hot.updateSettings({ nestedHeaders: currentHeaders });
+}
+
+function triggerRenameModal(colIdx) {
+    currentTargetCol = colIdx;
+    document.getElementById('col-letter').innerText = String.fromCharCode(65 + colIdx);
+    document.getElementById('input-qty').value = currentHeaders[1][colIdx];
+    document.getElementById('input-unit').value = currentHeaders[2][colIdx];
+    document.getElementById('rename-modal').style.display = 'block';
+    document.getElementById('input-qty').focus();
+}
+
+function openNotesModal(colIdx) {
+    currentTargetCol = colIdx;
+    document.getElementById('notes-col-letter').innerText = String.fromCharCode(65 + colIdx);
+    document.getElementById('input-notes').value = columnNotes[colIdx] || "";
+    document.getElementById('notes-modal').style.display = 'block';
+    document.getElementById('input-notes').focus();
+}
+
+function applyRename() {
+    currentHeaders[1][currentTargetCol] = document.getElementById('input-qty').value;
+    currentHeaders[2][currentTargetCol] = document.getElementById('input-unit').value;
+    hot.updateSettings({ nestedHeaders: currentHeaders });
+    closeModal();
+    syncAndGraph();
+}
+
+function applyNotes() {
+    columnNotes[currentTargetCol] = document.getElementById('input-notes').value;
+    closeModal();
+}
+
+function closeModal() { 
+    document.getElementById('rename-modal').style.display = 'none';
+    document.getElementById('notes-modal').style.display = 'none';
+}
+
+function toggleTheme() {
+    const current = document.body.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', next);
+    syncAndGraph();
+}
+
+// Keyboard Listeners
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Enter') {
+        if (document.getElementById('rename-modal').style.display === 'block') applyRename();
+        if (document.getElementById('notes-modal').style.display === 'block') applyNotes();
+    }
+});
+
+function syncAndGraph() {
+    const raw = hot.getData();
+    const x = raw.map(r => parseFloat(r[0])).filter(v => !isNaN(v));
+    const y = raw.map(r => parseFloat(r[1])).filter(v => !isNaN(v));
+    
+    const qtyX = currentHeaders[1][0].replace(/\$/g, '');
+    const unitX = currentHeaders[2][0];
+    const qtyY = currentHeaders[1][1].replace(/\$/g, '');
+    const unitY = currentHeaders[2][1];
+
+    const isDark = document.body.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#f8fafc' : '#0f172a';
+    const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+    const trace = {
+        x, y, mode: 'markers+lines',
+        type: 'scatter',
+        marker: { size: 10, color: '#3b82f6', line: { width: 1, color: textColor } },
+        line: { color: '#3b82f6', width: 2 }
+    };
+
+    const layout = {
+        xaxis: { title: { text: `${qtyX} (${unitX})`, font: { color: textColor } }, gridcolor: gridColor, tickfont: { color: textColor } },
+        yaxis: { title: { text: `${qtyY} (${unitY})`, font: { color: textColor } }, gridcolor: gridColor, tickfont: { color: textColor } },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        dragmode: 'select',
+        margin: { t: 40, b: 60, l: 60, r: 40 },
+        template: isDark ? 'plotly_dark' : 'plotly_white'
+    };
+
+    Plotly.newPlot('plot', [trace], layout);
+
+    document.getElementById('plot').on('plotly_selected', (ed) => {
+        if(ed && ed.points.length > 0) {
+            lastSelectedPoints = ed.points.sort((a,b) => a.x - b.x);
+            const area = calculateIntegral(lastSelectedPoints);
+            document.getElementById('stats-output').innerHTML = `<b>∫ y dx:</b> ${area.toFixed(4)} [${unitX}·${unitY}]`;
+        }
+    });
+
+    document.getElementById('plot').on('plotly_click', (data) => {
+        const idx = data.points[0].pointIndex;
+        if(idx > 0 && idx < x.length - 1) {
+            const h1 = x[idx]-x[idx-1], h2 = x[idx+1]-x[idx];
+            const slope = (((y[idx]-y[idx-1])/h1)*h2 + ((y[idx+1]-y[idx])/h2)*h1)/(h1+h2);
+            document.getElementById('stats-output').innerHTML = `<b>3-Point Slope at ${x[idx]}:</b> ${slope.toFixed(4)} ${unitY}/${unitX}`;
+        }
+    });
+}
+
+function calculateIntegral(p) {
+    let area = 0;
+    for(let i=0; i < p.length - 1; i++) area += ((p[i].y + p[i+1].y) / 2) * (p[i+1].x - p[i].x);
+    return area;
+}
+
+function runRegression(type) {
+    if(!lastSelectedPoints) return alert("Select a range on graph first.");
+    const x = lastSelectedPoints.map(p => p.x);
+    const y = lastSelectedPoints.map(p => p.y);
+    if (type === 'linear') {
+        const l = ss.linearRegression(x.map((xv, i) => [xv, y[i]]));
+        document.getElementById('stats-output').innerHTML += `<br><b>Linear:</b> y = ${l.m.toFixed(3)}x + ${l.b.toFixed(3)}`;
+    }
+}
+
+// Initial theme setup based on system
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.body.setAttribute('data-theme', 'dark');
+}
+
+initTable();
+syncAndGraph();
+</script>
+</body>
+</html>

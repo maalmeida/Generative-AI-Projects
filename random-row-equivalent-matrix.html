@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Matrix Row Equivalence</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; background: #f0f2f5; color: #1c1e21; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        textarea { width: 100%; height: 80px; font-family: 'Fira Code', monospace; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; transition: border-color 0.3s; }
+        textarea:focus { border-color: #4a90e2; outline: none; }
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 8px; }
+        .result-box { background: #fff; border: 2px solid #e1e4e8; padding: 20px; border-radius: 8px; margin-top: 25px; position: relative; }
+        .raw-latex { background: #282c34; color: #abb2bf; padding: 12px; border-radius: 6px; font-family: monospace; display: flex; justify-content: space-between; align-items: center; overflow-x: auto; }
+        button { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: transform 0.1s, background 0.2s; }
+        .btn-primary { background: #4a90e2; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-copy { background: #28a745; color: white; font-size: 12px; margin-left: 10px; }
+        button:active { transform: scale(0.98); }
+        .log-area { margin-top: 15px; padding: 10px; border-top: 1px dashed #ccc; font-style: italic; color: #555; }
+        label { font-weight: bold; font-size: 0.9em; }
+        .preview-label { color: #4a90e2; font-weight: bold; margin-bottom: 5px; display: block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Matrix Row Equivalence</h2>
+    
+    <div class="controls">
+        <label>Default Size: 
+            <select id="defRows"><option value="0">Random</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select> × 
+            <select id="defCols"><option value="0">Random</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select>
+        </label>
+        <button class="btn-secondary" onclick="generateRandomDefault()">New Random Matrix</button>
+    </div>
+
+    <span class="preview-label">Live Input Preview:</span>
+    <div id="inputRender" style="min-height: 80px;"></div>
+    
+    <textarea id="matrixInput" oninput="handleInput()"></textarea>
+
+    <div class="controls" style="margin-top:20px;">
+        <label>Rows to Modify: <select id="modCountSelect"></select></label>
+        <button class="btn-primary" onclick="applyTransformations()">Generate Equivalent Matrix</button>
+    </div>
+
+    <div id="outputContainer" class="result-box" style="display:none;">
+        <span class="preview-label">Equivalent Result:</span>
+        <div id="outputRender"></div>
+        <div class="log-area" id="opLog"></div>
+        <p><strong>Raw LaTeX:</strong></p>
+        <div class="raw-latex">
+            <span id="rawText"></span>
+            <button class="btn-copy" onclick="copyToClipboard()">Copy Text</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const inputArea = document.getElementById('matrixInput');
+    const modSelect = document.getElementById('modCountSelect');
+
+    function getRandom(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function parseMatrix(str) {
+        return str.split('\\\\').map(r => r.split('&').map(c => {
+            let val = parseInt(c.trim());
+            return isNaN(val) ? 0 : val;
+        })).filter(r => r.length > 0 && r.some(c => !isNaN(c)));
+    }
+
+    function stringify(mtx) {
+        return mtx.map(r => r.join(' & ')).join(' \\\\ ');
+    }
+
+    function updateModDropdown(rowCount) {
+        const currentVal = modSelect.value;
+        modSelect.innerHTML = '<option value="random">0 (Random)</option>';
+        for(let i = 1; i <= rowCount; i++) {
+            modSelect.innerHTML += `<option value="${i}">${i}</option>`;
+        }
+        // Keep "all" option or try to preserve selection
+        modSelect.innerHTML += `<option value="all">All (${rowCount})</option>`;
+    }
+
+    function handleInput() {
+        const val = inputArea.value;
+        render('inputRender', val);
+        const m = parseMatrix(val);
+        if(m.length > 0) updateModDropdown(m.length);
+    }
+
+    function render(id, code) {
+        const target = document.getElementById(id);
+        const cleanCode = code.trim() || ' ';
+        try {
+            katex.render(`\\begin{pmatrix} ${cleanCode} \\end{pmatrix}`, target, { 
+                displayMode: true,
+                throwOnError: false 
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    function generateRandomDefault() {
+        let r = parseInt(document.getElementById('defRows').value) || getRandom(1,4);
+        let c = parseInt(document.getElementById('defCols').value) || getRandom(1,4);
+        let m = [];
+        for(let i=0; i<r; i++) {
+            let row = [];
+            for(let j=0; j<c; j++) row.push(getRandom(-5, 5));
+            m.push(row);
+        }
+        inputArea.value = stringify(m);
+        handleInput();
+    }
+
+    function applyTransformations() {
+        let matrix = parseMatrix(inputArea.value);
+        if(matrix.length === 0) return;
+        
+        let m = matrix.length;
+        let n = matrix[0].length;
+        let result = matrix.map(r => [...r]);
+        let logs = [];
+
+        let selection = modSelect.value;
+        let countToChange;
+        if(selection === 'random') countToChange = getRandom(1, m);
+        else if(selection === 'all') countToChange = m;
+        else countToChange = parseInt(selection);
+
+        // Randomize target rows
+        let indices = Array.from({length: m}, (_, i) => i).sort(() => Math.random() - 0.5);
+        let targets = indices.slice(0, countToChange);
+
+        targets.forEach(idx => {
+            let success = false;
+            let attempts = 0;
+            while(!success && attempts < 100) {
+                let sourceIdx = getRandom(0, m - 1);
+                if (m > 1 && sourceIdx === idx) sourceIdx = (idx + 1) % m;
+                let k = 0; while(k === 0) k = getRandom(-5, 5);
+                
+                let tempRow = result[idx].map((val, colIdx) => val + (k * result[sourceIdx][colIdx]));
+                
+                // MATH VALIDATION: Ensure entries stay within -20 to 20
+                if(tempRow.every(v => v >= -20 && v <= 20)) {
+                    result[idx] = tempRow;
+                    logs.push(`R${idx+1} &larr; R${idx+1} + (${k})R${sourceIdx+1}`);
+                    success = true;
+                }
+                attempts++;
+            }
+        });
+
+        const outStr = stringify(result);
+        document.getElementById('outputContainer').style.display = 'block';
+        render('outputRender', outStr);
+        document.getElementById('rawText').innerText = outStr;
+        document.getElementById('opLog').innerHTML = "<strong>Steps:</strong> " + (logs.length ? logs.join(' | ') : "No valid small-integer operations found for these constraints.");
+    }
+
+    function copyToClipboard() {
+        navigator.clipboard.writeText(document.getElementById('rawText').innerText);
+        const btn = document.querySelector('.btn-copy');
+        btn.innerText = "Copied!";
+        setTimeout(() => btn.innerText = "Copy Text", 2000);
+    }
+
+    // Initialize
+    window.onload = generateRandomDefault;
+</script>
+</body>
+</html>
