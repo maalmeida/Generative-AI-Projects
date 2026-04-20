@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polynomial Constraint Builder</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        table { border-collapse: collapse; margin-bottom: 20px; }
+        th, td { padding: 8px; border: 1px solid #ccc; }
+        .controls { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <h1>Polynomial Constraint Builder</h1>
+
+    <div class="controls">
+        <label for="degree">Select Polynomial Degree:</label>
+        <select id="degree" onchange="updateTable()">
+            <option value="3">3rd Degree</option>
+            <option value="4">4th Degree</option>
+            <option value="5">5th Degree</option>
+        </select>
+    </div>
+
+    <table id="pointTable">
+        <thead>
+            <tr>
+                <th>x</th>
+                <th>y</th>
+                <th>Constraint Type</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            </tbody>
+    </table>
+
+    <button onclick="generateData()">Export Constraints</button>
+
+    <script>
+        function updateTable() {
+            const degree = parseInt(document.getElementById('degree').value);
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            // A polynomial of degree N typically needs N+1 constraints
+            const numRows = degree + 1;
+
+            for (let i = 0; i < numRows; i++) {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td><input type="number" step="any" class="x-val" placeholder="x"></td>
+                    <td><input type="number" step="any" class="y-val" placeholder="y"></td>
+                    <td>
+                        <select class="constraint">
+                            <option value="point">Standard Point</option>
+                            <option value="min">Local Minimum</option>
+                            <option value="max">Local Maximum</option>
+                        </select>
+                    </td>
+                `;
+            }
+        }
+
+        function generateData() {
+            const rows = document.querySelectorAll('#tableBody tr');
+            const data = Array.from(rows).map(row => ({
+                x: row.querySelector('.x-val').value,
+                y: row.querySelector('.y-val').value,
+                type: row.querySelector('.constraint').value
+            }));
+            
+            console.log("Constraints:", data);
+            alert("Check the browser console for the JSON data!");
+        }
+
+        // Initialize table on load
+        updateTable();
+    </script>
+</body>
+</html>

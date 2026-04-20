@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Simulator - Vector Arrowheads</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            display: flex; flex-direction: column; 
+            background: #2c3e50; color: white; margin: 0; overflow: hidden;
+        }
+        canvas#simCanvas { background: #ecf0f1; display: block; flex-grow: 1; cursor: grab; }
+        canvas#simCanvas:active { cursor: grabbing; }
+        
+        .controls { 
+            background: #34495e; padding: 15px; 
+            display: flex; gap: 30px; justify-content: center; align-items: center;
+            border-top: 2px solid #2c3e50; flex-wrap: wrap;
+        }
+
+        #graphContainer {
+            position: absolute; bottom: 110px; left: 20px;
+            background: rgba(0, 0, 0, 0.85); border-radius: 8px;
+            overflow: hidden; transition: 0.3s; width: 280px;
+            border: 1px solid #7f8c8d;
+        }
+        .graph-header {
+            background: #16a085; padding: 10px 15px; cursor: pointer;
+            display: flex; justify-content: space-between; font-weight: bold;
+        }
+        .graph-wrapper { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+        canvas.graph { background: #111; border: 1px solid #444; }
+        .collapsed { height: 42px !important; }
+
+        input[type=range], input[type=checkbox] { cursor: pointer; vertical-align: middle; }
+        .label-val { color: #1abc9c; font-family: monospace; font-weight: bold; min-width: 30px; display: inline-block; }
+        button { 
+            background: #e74c3c; color: white; border: none; padding: 10px 20px; 
+            border-radius: 5px; cursor: pointer; font-weight: bold;
+        }
+        .check-group { display: flex; align-items: center; gap: 8px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <canvas id="simCanvas"></canvas>
+
+    <div id="graphContainer">
+        <div class="graph-header" onclick="toggleGraph()">
+            <span>Live Velocity Graphs</span>
+            <span id="toggleBtn">−</span>
+        </div>
+        <div class="graph-wrapper">
+            <small>Velocity X (Horizontal)</small>
+            <canvas id="velXGraph" class="graph" width="260" height="100"></canvas>
+            <small>Velocity Y (Vertical)</small>
+            <canvas id="velYGraph" class="graph" width="260" height="100"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div>
+            <label>Force (F): <span id="forceVal" class="label-val">100</span></label>
+            <input type="range" id="forceRange" min="10" max="500" value="100">
+        </div>
+        <div>
+            <label>Mass (m): <span id="massVal" class="label-val">10</span></label>
+            <input type="range" id="massRange" min="1" max="100" value="10">
+        </div>
+        <div class="check-group">
+            <input type="checkbox" id="frictionToggle">
+            <label for="frictionToggle">Resistive Forces</label>
+        </div>
+        <button onclick="resetSim()">Reset Simulation</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const vxCanvas = document.getElementById('velXGraph'), vyCanvas = document.getElementById('velYGraph');
+        const vxCtx = vxCanvas.getContext('2d'), vyCtx = vyCanvas.getContext('2d');
+        const frictionCheckbox = document.getElementById('frictionToggle');
+
+        let vxHistory = [], vyHistory = [];
+        const maxDataPoints = 80;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 85;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let pos = { x: canvas.width / 2, y: canvas.height / 2 };
+        let vel = { x: 0, y: 0 };
+        let radius = 25, isDragging = false;
+        const keys = {};
+
+        window.onkeydown = (e) => keys[e.key] = true;
+        window.onkeyup = (e) => keys[e.key] = false;
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const dist = Math.sqrt((e.clientX - rect.left - pos.x)**2 + (e.clientY - rect.top - pos.y)**2);
+            if (dist < radius) { isDragging = true; vel = { x: 0, y: 0 }; }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                pos.x = e.clientX - rect.left;
+                pos.y = e.clientY - rect.top;
+                vel = { x: 0, y: 0 }; 
+            }
+        });
+
+        window.addEventListener('mouseup', () => isDragging = false);
+
+        function resetSim() {
+            pos = { x: canvas.width / 2, y: canvas.height / 2 };
+            vel = { x: 0, y: 0 };
+            vxHistory = []; vyHistory = [];
+        }
+
+        function toggleGraph() {
+            document.getElementById('graphContainer').classList.toggle('collapsed');
+            document.getElementById('toggleBtn').innerText = document.getElementById('graphContainer').classList.contains('collapsed') ? "+" : "−";
+        }
+
+        function drawForceArrow(x, y, fx, fy) {
+            if (fx === 0 && fy === 0) return;
+
+            const lengthScale = 0.5;
+            const endX = x + fx * lengthScale;
+            const endY = y + fy * lengthScale;
+            const headlen = 12; // length of head in pixels
+            const angle = Math.atan2(fy, fx);
+
+            ctx.save();
+            ctx.strokeStyle = "#e74c3c";
+            ctx.fillStyle = "#e74c3c";
+            ctx.lineWidth = 4;
+
+            // Draw line
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            // Draw arrowhead
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        function drawGraph(gCtx, history, color) {
+            const w = 260, h = 100, midY = h / 2;
+            gCtx.clearRect(0, 0, w, h);
+            gCtx.strokeStyle = "#444";
+            gCtx.beginPath(); gCtx.moveTo(0, midY); gCtx.lineTo(w, midY); gCtx.stroke();
+            gCtx.beginPath(); gCtx.strokeStyle = color; gCtx.lineWidth = 2;
+            for(let i = 0; i < history.length; i++) {
+                const x = (i * (w / maxDataPoints));
+                const y = midY - (history[i] * 4);
+                if(i === 0) gCtx.moveTo(x, y); else gCtx.lineTo(x, y);
+            }
+            gCtx.stroke();
+        }
+
+        function loop() {
+            const F = parseFloat(document.getElementById('forceRange').value);
+            const m = parseFloat(document.getElementById('massRange').value);
+            const hasResistance = frictionCheckbox.checked;
+            
+            document.getElementById('forceVal').innerText = F;
+            document.getElementById('massVal').innerText = m;
+
+            let fx = 0, fy = 0;
+            if (!isDragging) {
+                if (keys["ArrowUp"]) fy -= F;
+                if (keys["ArrowDown"]) fy += F;
+                if (keys["ArrowLeft"]) fx -= F;
+                if (keys["ArrowRight"]) fx += F;
+
+                vel.x += (fx / m) / 60;
+                vel.y += (fy / m) / 60;
+                pos.x += vel.x;
+                pos.y += vel.y;
+
+                if (hasResistance) {
+                    vel.x *= 0.98;
+                    vel.y *= 0.98;
+                }
+
+                const bounce = hasResistance ? -0.7 : -1;
+                if (pos.x < radius) { pos.x = radius; vel.x *= bounce; }
+                if (pos.x > canvas.width - radius) { pos.x = canvas.width - radius; vel.x *= bounce; }
+                if (pos.y < radius) { pos.y = radius; vel.y *= bounce; }
+                if (pos.y > canvas.height - radius) { pos.y = canvas.height - radius; vel.y *= bounce; }
+            }
+
+            vxHistory.push(vel.x); vyHistory.push(vel.y);
+            if (vxHistory.length > maxDataPoints) vxHistory.shift();
+            if (vyHistory.length > maxDataPoints) vyHistory.shift();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (!isDragging) {
+                drawForceArrow(pos.x, pos.y, fx, fy);
+            }
+            
+            ctx.fillStyle = isDragging ? "#2ecc71" : "#3498db";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "rgba(0,0,0,0.2)";
+            ctx.beginPath(); ctx.arc(pos.x, pos.y, radius, 0, Math.PI*2); ctx.fill();
+
+            drawGraph(vxCtx, vxHistory, "#1abc9c");
+            drawGraph(vyCtx, vyHistory, "#f1c40f");
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2-State Markov Chain Ensemble</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1200px; }
+        .panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        canvas { border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .control-group { display: flex; flex-direction: column; }
+        label { font-size: 0.85rem; font-weight: bold; margin-bottom: 4px; }
+        .buttons { margin-top: 10px; display: flex; gap: 5px; }
+        button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 4px; background: #007bff; color: white; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; }
+        .stats { margin-top: 10px; font-size: 0.9rem; color: #555; }
+    </style>
+</head>
+<body>
+
+<h1>2-State Markov Chain Explorer</h1>
+
+<div class="container">
+    <div class="panel" style="width: 350px;">
+        <h3>Controls</h3>
+        <div class="controls">
+            <div class="control-group">
+                <label>P(A → B): <span id="valAB">0.1</span></label>
+                <input type="range" id="pAB" min="0" max="1" step="0.01" value="0.1">
+            </div>
+            <div class="control-group">
+                <label>P(B → A): <span id="valBA">0.1</span></label>
+                <input type="range" id="pBA" min="0" max="1" step="0.01" value="0.1">
+            </div>
+            <div class="control-group">
+                <label>Ensemble Size: <span id="valSize">10</span></label>
+                <input type="range" id="size" min="1" max="20" step="1" value="10">
+            </div>
+            <div class="control-group">
+                <label>Speed: <span id="valSpeed">1</span>x</label>
+                <input type="range" id="speed" min="0.5" max="5" step="0.5" value="1">
+            </div>
+        </div>
+
+        <label>Initial State:</label>
+        <select id="initialState">
+            <option value="0">State A</option>
+            <option value="1">State B</option>
+        </select>
+
+        <div class="buttons">
+            <button id="playPause">Pause</button>
+            <button id="stepBtn">Step</button>
+            <button id="resetBtn" style="background:#dc3545">Reset</button>
+        </div>
+
+        <div class="stats">
+            Cycles (N): <span id="cycleCount">0</span>
+        </div>
+        <canvas id="chartCanvas" width="300" height="250"></canvas>
+    </div>
+
+    <div class="panel">
+        <canvas id="simCanvas" width="600" height="400"></canvas>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const chartCtx = document.getElementById('chartCanvas').getContext('2d');
+
+    // State positions
+    const posA = { x: 150, y: 200 };
+    const posB = { x: 450, y: 200 };
+    const radius = 40;
+
+    // Simulation variables
+    let n = 0;
+    let particles = [];
+    let isRunning = true;
+    let pA = 1.0; // Theoretical state vector
+    let pB = 0.0;
+    let moveProgress = 1; // 1 means particles are at rest
+
+    // Elements
+    const pABSlider = document.getElementById('pAB');
+    const pBASlider = document.getElementById('pBA');
+    const sizeSlider = document.getElementById('size');
+    const speedSlider = document.getElementById('speed');
+
+    function initParticles() {
+        n = 0;
+        const count = parseInt(sizeSlider.value);
+        const startState = parseInt(document.getElementById('initialState').value);
+        particles = Array.from({ length: count }, () => ({
+            current: startState,
+            next: startState,
+            x: startState === 0 ? posA.x : posB.x,
+            y: startState === 0 ? posA.y : posB.y
+        }));
+        pA = startState === 0 ? 1 : 0;
+        pB = startState === 0 ? 0 : 1;
+        updateChart();
+    }
+
+    function step() {
+        const probAB = parseFloat(pABSlider.value);
+        const probBA = parseFloat(pBASlider.value);
+
+        // Update Experimental
+        particles.forEach(p => {
+            p.current = p.next;
+            const rand = Math.random();
+            if (p.current === 0) {
+                p.next = rand < probAB ? 1 : 0;
+            } else {
+                p.next = rand < probBA ? 0 : 1;
+            }
+        });
+
+        // Update Theoretical
+        let nextPA = pA * (1 - probAB) + pB * probBA;
+        let nextPB = pA * probAB + pB * (1 - probBA);
+        pA = nextPA;
+        pB = nextPB;
+
+        n++;
+        moveProgress = 0;
+        document.getElementById('cycleCount').innerText = n;
+        updateChart();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const speed = parseFloat(speedSlider.value) * 0.02;
+
+        // Draw transitions
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#aaa';
+        
+        // A -> B
+        ctx.beginPath(); ctx.moveTo(posA.x, posA.y - 10); ctx.lineTo(posB.x, posB.y - 10); ctx.stroke();
+        // B -> A
+        ctx.beginPath(); ctx.moveTo(posA.x, posA.y + 10); ctx.lineTo(posB.x, posB.y + 10); ctx.stroke();
+        // Self loops
+        ctx.beginPath(); ctx.arc(posA.x - 40, posA.y, 25, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(posB.x + 40, posB.y, 25, 0, Math.PI * 2); ctx.stroke();
+
+        // Draw States
+        drawState(posA.x, posA.y, "State A", "#007bff");
+        drawState(posB.x, posB.y, "State B", "#28a745");
+
+        // Update and Draw Particles
+        if (moveProgress < 1) moveProgress = Math.min(1, moveProgress + speed);
+        
+        particles.forEach((p, i) => {
+            const offset = (i - particles.length / 2) * 4;
+            let targetX, targetY;
+            
+            if (p.current === p.next) {
+                // Self loop animation
+                const center = p.current === 0 ? {x: posA.x - 40, y: posA.y} : {x: posB.x + 40, y: posB.y};
+                const angle = moveProgress * Math.PI * 2;
+                targetX = center.x + Math.cos(angle) * 25;
+                targetY = center.y + Math.sin(angle) * 25;
+            } else {
+                const start = p.current === 0 ? posA : posB;
+                const end = p.next === 0 ? posA : posB;
+                const yOff = p.current === 0 ? -10 : 10;
+                targetX = start.x + (end.x - start.x) * moveProgress;
+                targetY = start.y + yOff;
+            }
+
+            ctx.fillStyle = "rgba(0,0,0,0.6)";
+            ctx.beginPath();
+            ctx.arc(targetX, targetY + offset, 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        if (isRunning && moveProgress >= 1) step();
+        requestAnimationFrame(draw);
+    }
+
+    function drawState(x, y, label, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.fillText(label, x, y + 5);
+    }
+
+    // Chart logic
+    const chart = new Chart(chartCtx, {
+        type: 'bar',
+        data: {
+            labels: ['State A', 'State B'],
+            datasets: [
+                { label: 'Experimental', data: [0, 0], backgroundColor: '#6c757d' },
+                { label: 'Theoretical', data: [0, 0], backgroundColor: '#ffc107' }
+            ]
+        },
+        options: { scales: { y: { min: 0, max: 1 } }, animation: false }
+    });
+
+    function updateChart() {
+        const experimentalA = particles.filter(p => p.next === 0).length / particles.length;
+        chart.data.datasets[0].data = [experimentalA, 1 - experimentalA];
+        chart.data.datasets[1].data = [pA, pB];
+        chart.update();
+    }
+
+    // Event Listeners
+    pABSlider.oninput = (e) => document.getElementById('valAB').innerText = e.target.value;
+    pBASlider.oninput = (e) => document.getElementById('valBA').innerText = e.target.value;
+    sizeSlider.oninput = (e) => { document.getElementById('valSize').innerText = e.target.value; initParticles(); };
+    speedSlider.oninput = (e) => document.getElementById('valSpeed').innerText = e.target.value;
+    
+    document.getElementById('playPause').onclick = (e) => {
+        isRunning = !isRunning;
+        e.target.innerText = isRunning ? "Pause" : "Play";
+    };
+    document.getElementById('stepBtn').onclick = () => { isRunning = false; document.getElementById('playPause').innerText = "Play"; step(); };
+    document.getElementById('resetBtn').onclick = initParticles;
+
+    initParticles();
+    draw();
+</script>
+</body>
+</html>

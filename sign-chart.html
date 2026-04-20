@@ -1,0 +1,120 @@
+<!-- Status: Doesn't work-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Function Sign Chart Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 40px; line-height: 1.6; background-color: #f4f4f9; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input { padding: 10px; width: 70%; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        #result { margin-top: 30px; }
+        .sign-chart { display: flex; align-items: center; justify-content: center; margin-top: 20px; overflow-x: auto; padding-bottom: 10px; }
+        .point-box { text-align: center; min-width: 60px; }
+        .interval-box { text-align: center; min-width: 80px; font-weight: bold; color: #555; border-bottom: 2px solid #333; margin: 0 5px; padding-bottom: 5px; }
+        .zero { color: red; font-weight: bold; }
+        .pos { color: green; }
+        .neg { color: blue; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Function Sign Chart Generator</h2>
+    <p>Enter a function of <b>x</b> (e.g., <code>x^2 - 4</code> or <code>(x-1)/(x+2)</code>):</p>
+    <input type="text" id="functionInput" placeholder="e.g., x^3 - 3x">
+    <button onclick="generateSignChart()">Generate</button>
+
+    <div id="result"></div>
+</div>
+
+<script>
+function generateSignChart() {
+    const input = document.getElementById('functionInput').value;
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = "";
+
+    try {
+        const node = math.parse(input);
+        const code = node.compile();
+        
+        const f = (val) => {
+            try { return code.evaluate({x: val}); } 
+            catch { return NaN; }
+        };
+
+        // 1. Find Critical Points (Zeros and Undefined points)
+        // Note: This is a simplified numerical approach for a browser tool
+        let criticalPoints = [];
+        let precision = 0.1;
+        let range = 20; // Scan from -20 to 20
+
+        for (let i = -range; i <= range; i += precision) {
+            let y1 = f(i);
+            let y2 = f(i + precision);
+
+            // Check for Zero (Sign change or exact zero)
+            if (y1 === 0) criticalPoints.push(Number(i.toFixed(2)));
+            else if (y1 * y2 < 0 && isFinite(y1) && isFinite(y2)) {
+                criticalPoints.push(Number((i + precision/2).toFixed(2)));
+            }
+            
+            // Check for Vertical Asymptote (Undefined)
+            if (!isFinite(y1) && isFinite(y2)) criticalPoints.push(Number(i.toFixed(2)));
+        }
+
+        // Clean up duplicates and sort
+        criticalPoints = [...new Set(criticalPoints)].sort((a, b) => a - b);
+        
+        // 2. Build the Visual Chart
+        if (criticalPoints.length === 0) {
+            const sign = f(0) > 0 ? "+" : "-";
+            resultDiv.innerHTML = `<p>No critical points found. The function is always <span class="${f(0)>0?'pos':'neg'}">${sign}</span>.</p>`;
+            return;
+        }
+
+        let html = `<h3>Sign Chart for $f(x) = ${input}$</h3><div class="sign-chart">`;
+        
+        // Add leftmost interval
+        let firstTest = criticalPoints[0] - 1;
+        html += renderInterval(f(firstTest));
+
+        criticalPoints.forEach((pt, index) => {
+            // Render the critical point
+            const valAtPt = f(pt);
+            const label = isFinite(valAtPt) && Math.abs(valAtPt) < 0.1 ? "0" : "U";
+            html += `<div class="point-box"><div class="zero">${label}</div><small>${pt}</small></div>`;
+
+            // Render the interval after this point
+            if (index < criticalPoints.length - 1) {
+                let midTest = (pt + criticalPoints[index + 1]) / 2;
+                html += renderInterval(f(midTest));
+            } else {
+                // Last interval
+                let lastTest = pt + 1;
+                html += renderInterval(f(lastTest));
+            }
+        });
+
+        html += `</div><p><small>Note: '0' = Zero, 'U' = Undefined/Asymptote</small></p>`;
+        resultDiv.innerHTML = html;
+
+    } catch (err) {
+        resultDiv.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+    }
+}
+
+function renderInterval(val) {
+    if (val > 0) return `<div class="interval-box pos">+</div>`;
+    if (val < 0) return `<div class="interval-box neg">-</div>`;
+    return `<div class="interval-box">?</div>`;
+}
+</script>
+
+</body>
+</html>

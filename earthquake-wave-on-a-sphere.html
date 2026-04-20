@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Seismic Probe Lab - Speed Control</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', monospace; color: #00ffcc; }
+        #ui { position: absolute; top: 20px; left: 20px; background: rgba(10,20,30,0.95); padding: 15px; border: 1px solid #00ffcc; width: 280px; z-index: 100; box-shadow: 0 0 20px rgba(0,255,204,0.3); font-size: 12px; }
+        #seismograph { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.9); border: 2px solid #ff3300; width: 380px; height: 160px; z-index: 100; padding: 5px; }
+        canvas { width: 100%; height: 100%; }
+        .ctrl { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 2px; color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        input, button { width: 100%; background: #111; color: #00ffcc; border: 1px solid #444; padding: 4px; box-sizing: border-box; }
+        button { background: #00ffcc; color: #000; font-weight: bold; cursor: pointer; border: none; padding: 10px; margin-top: 5px; }
+        button:hover { background: #fff; }
+        .val-display { float: right; color: #fff; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h3 style="margin:0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px;">SEISMIC CONTROL PANEL</h3>
+    
+    <div class="ctrl">
+        <label>Simulation Speed <span id="speedVal" class="val-display">1.0x</span></label>
+        <input type="range" id="timeScale" min="0.1" max="3.0" step="0.1" value="1.0">
+    </div>
+
+    <div class="ctrl">
+        <label>Earthquake Magnitude</label>
+        <input type="range" id="mag" min="1" max="10" step="0.1" value="8.0">
+    </div>
+
+    <div class="ctrl">
+        <label>Land Coverage</label>
+        <input type="range" id="landCover" min="0" max="1" step="0.05" value="0.6">
+    </div>
+
+    <div class="ctrl">
+        <label>Probe Latitude</label>
+        <input type="range" id="probeLat" min="-1.5" max="1.5" step="0.05" value="0.4">
+    </div>
+
+    <div class="ctrl">
+        <label>Probe Longitude</label>
+        <input type="range" id="probeLon" min="0" max="6.28" step="0.05" value="3.14">
+    </div>
+
+    <button id="regen">REGENERATE TOPOLOGY</button>
+    <button id="trigger">INITIATE SEISMIC EVENT</button>
+</div>
+
+<div id="seismograph">
+    <div style="position: absolute; top: 5px; left: 10px; color: #ff3300; font-size: 10px; font-weight: bold;">STATION TRACE: PROBE 01</div>
+    <canvas id="waveCanvas"></canvas>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script id="vertexShader" type="x-shader/x-vertex">
+    uniform float uTime;
+    uniform float uActive;
+    uniform float uMag;
+    varying float vDisp;
+    varying vec2 vUv;
+
+    void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float dist = distance(normalize(position), vec3(0.0, 1.0, 0.0));
+        
+        float disp = 0.0;
+        if(uActive > 0.0) {
+            float p = sin((dist - uTime * 3.2) * 40.0) * exp(-abs(dist - uTime * 3.2) * 5.5);
+            float s = sin((dist - uTime * 1.8) * 20.0) * exp(-abs(dist - uTime * 1.8) * 3.5);
+            disp = (p * 0.02 + s * 0.08) * (uMag / 5.0);
+            pos += normal * disp;
+        }
+        vDisp = disp;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+</script>
+
+<script id="fragmentShader" type="x-shader/x-fragment">
+    uniform float uLandCover;
+    uniform float uSeed;
+    varying vec2 vUv;
+    varying float vDisp;
+
+    float rand(vec2 p) {
+        return fract(sin(dot(p + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    void main() {
+        vec2 st = vUv * 65.0; // High frequency texture
+        float n = rand(floor(st)) * 0.5 + rand(floor(st * 2.5)) * 0.25 + rand(floor(st * 5.0)) * 0.125;
+        
+        vec3 color = (n > (1.2 - uLandCover)) ? vec3(0.12, 0.22, 0.12) : vec3(0.01, 0.04, 0.08);
+        color += abs(vDisp) * 12.0 * vec3(0.3, 1.0, 0.9);
+        gl_FragColor = vec4(color, 1.0);
+    }
+</script>
+
+<script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const uniforms = {
+        uTime: { value: 0 },
+        uActive: { value: 0 },
+        uMag: { value: 8.0 },
+        uLandCover: { value: 0.6 },
+        uSeed: { value: Math.random() * 100 }
+    };
+
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 256, 256),
+        new THREE.ShaderMaterial({ uniforms, vertexShader: document.getElementById('vertexShader').textContent, fragmentShader: document.getElementById('fragmentShader').textContent })
+    );
+    scene.add(sphere);
+
+    const probe = new THREE.Mesh(new THREE.SphereGeometry(0.035, 24, 24), new THREE.MeshBasicMaterial({ color: 0xff3300 }));
+    scene.add(probe);
+    camera.position.z = 3;
+
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+    let waveData = new Array(200).fill(0);
+    
+    let simTime = 0; // Internal clock for the simulation
+    let lastFrameTime = performance.now();
+
+    document.getElementById('trigger').onclick = () => {
+        uniforms.uActive.value = 1.0;
+        simTime = 0; 
+    };
+
+    document.getElementById('regen').onclick = () => uniforms.uSeed.value = Math.random() * 1000;
+    
+    document.getElementById('timeScale').oninput = (e) => {
+        document.getElementById('speedVal').innerText = e.target.value + 'x';
+    };
+
+    let isDragging = false, prevM = {x:0, y:0};
+    window.onmousedown = () => isDragging = true;
+    window.onmouseup = () => isDragging = false;
+    window.onmousemove = (e) => {
+        if(isDragging) {
+            sphere.rotation.y += (e.clientX - prevM.x) * 0.005;
+            sphere.rotation.x += (e.clientY - prevM.y) * 0.005;
+        }
+        prevM = {x: e.clientX, y: e.clientY};
+    };
+
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        // Calculate Delta Time and apply Scale
+        const now = performance.now();
+        const dt = (now - lastFrameTime) / 1000;
+        lastFrameTime = now;
+        const timeScale = parseFloat(document.getElementById('timeScale').value);
+
+        const lat = parseFloat(document.getElementById('probeLat').value);
+        const lon = parseFloat(document.getElementById('probeLon').value);
+        probe.position.set(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)).multiplyScalar(1.02);
+        uniforms.uLandCover.value = document.getElementById('landCover').value;
+
+        if(uniforms.uActive.value > 0) {
+            simTime += dt * timeScale; // Simulation clock advances based on slider
+            uniforms.uTime.value = simTime;
+            uniforms.uMag.value = document.getElementById('mag').value;
+
+            const dist = probe.position.distanceTo(new THREE.Vector3(0, 1, 0));
+            const p = Math.sin((dist - simTime * 3.2) * 40.0) * Math.exp(-Math.abs(dist - simTime * 3.2) * 5.5) * 0.02;
+            const s = Math.sin((dist - simTime * 1.8) * 20.0) * Math.exp(-Math.abs(dist - simTime * 1.8) * 3.5) * 0.08;
+            waveData.push((p + s) * (uniforms.uMag.value / 5.0));
+            
+            if(simTime > 8) uniforms.uActive.value = 0;
+        } else {
+            waveData.push(0);
+        }
+
+        if(waveData.length > 200) waveData.shift();
+
+        ctx.clearRect(0,0,380,160);
+        ctx.strokeStyle = '#ff3300';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 80);
+        for(let i=0; i<waveData.length; i++) {
+            ctx.lineTo((i/200)*380, 80 + waveData[i]*1000);
+        }
+        ctx.stroke();
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>

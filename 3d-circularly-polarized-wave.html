@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Circularly Polarized Wave</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: sans-serif; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>Circularly Polarized Wave</strong><br>
+        • Drag to Rotate<br>
+        • Scroll to Zoom
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        camera.position.set(12, 8, 12);
+        controls.update();
+
+        scene.add(new THREE.GridHelper(20, 20, 0x333333, 0x222222));
+
+        // --- Parameters ---
+        const vectorCount = 100; // LOTS of vectors
+        const length = 20;
+        const frequency = 1.5;
+        const amplitude = 3;
+        const arrows = [];
+
+        // Create a group to hold all arrows for better performance
+        const vectorGroup = new THREE.Group();
+        scene.add(vectorGroup);
+
+        for (let i = 0; i < vectorCount; i++) {
+            const dir = new THREE.Vector3(1, 0, 0);
+            const origin = new THREE.Vector3(0, 0, 0);
+            // Using a nice gradient from cyan to magenta
+            const color = new THREE.Color().setHSL(i / vectorCount, 0.8, 0.5);
+            const arrow = new THREE.ArrowHelper(dir, origin, amplitude, color, 0.4, 0.2);
+            vectorGroup.add(arrow);
+            arrows.push(arrow);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now() * 0.002;
+
+            arrows.forEach((arrow, i) => {
+                // Space them out along the Z axis
+                const z = (i / vectorCount) * length - (length / 2);
+                
+                // Circular polarization math
+                const phase = z * frequency - time;
+                const x = Math.sin(phase);
+                const y = Math.cos(phase);
+
+                // Update position and direction
+                arrow.position.set(0, 0, z);
+                arrow.setDirection(new THREE.Vector3(x, y, 0).normalize());
+                arrow.setLength(amplitude, 0.2, 0.1); 
+            });
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
